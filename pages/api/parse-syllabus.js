@@ -86,6 +86,21 @@ ${text.slice(0, 150000)}`;
           } catch (e) {
             return res.status(502).json({ error: 'Model did not return valid JSON', raw });
           }
+          // Safety net: never trust the model's merge call across two different
+          // department codes (e.g. "MGMT 1301" vs "ECON 2326"). If both the new
+          // course and the merge target look like "LETTERS NUMBERS" codes with
+          // different letter prefixes, refuse the merge no matter what the model said.
+          if (parsed && typeof parsed === 'object' && parsed.mergeInto) {
+            const deptPrefix = (label) => {
+              const m = String(label || '').trim().match(/^[A-Za-z]{2,}/);
+              return m ? m[0].toUpperCase() : null;
+            };
+            const newDept = deptPrefix(parsed.courseCode || parsed.courseName);
+            const mergeDept = deptPrefix(parsed.mergeInto);
+            if (newDept && mergeDept && newDept !== mergeDept) {
+              parsed.mergeInto = null;
+            }
+          }
           return res.status(200).json(parsed);
         }
         lastError = data.error?.message || 'Gemini API error';
