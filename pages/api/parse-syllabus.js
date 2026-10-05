@@ -49,8 +49,12 @@ Use "test" for exams/quizzes/midterms/finals, "deliverable" for projects/reports
 Syllabus text:
 ${text.slice(0, 150000)}`;
 
-  try {
-    const model = 'gemini-3.8-flash'; // free-tier eligible as of this writing; see README if that changes
+  // Try a couple of free-tier models in order, with a short retry, so a busy
+  // model doesn't just fail the upload. Newest/most-capable first.
+  const MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function callGemini(model) {
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
       {
@@ -66,17 +70,36 @@ ${text.slice(0, 150000)}`;
       }
     );
     const data = await r.json();
-    if (!r.ok) {
-      return res.status(502).json({ error: data.error?.message || 'Gemini API error' });
+    return { ok: r.ok, status: r.status, data };
+  }
+
+  try {
+    let lastError = 'Gemini API error';
+    for (const model of MODELS) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const { ok, status, data } = await callGemini(model);
+        if (ok) {
+          const raw = (data.candidates?.[0]?.content?.parts?.[0]?.text || '{}').replace(/```json|```/g, '').trim();
+          let parsed;
+          try {
+            parsed = JSON.parse(raw);
+          } catch (e) {
+            return res.status(502).json({ error: 'Model did not return valid JSON', raw });
+          }
+          return res.status(200).json(parsed);
+        }
+        lastError = data.error?.message || 'Gemini API error';
+        const overloaded = status === 503 || /overloaded|high demand|unavailable/i.test(lastError);
+        if (overloaded && attempt === 0) {
+          await sleep(1500); // brief retry on the same model before moving on
+          continue;
+        }
+        if (overloaded) break; // move to the next fallback model
+        // Non-overload error (bad request, auth, etc.) - no point retrying or falling back.
+        return res.status(502).json({ error: lastError });
+      }
     }
-    const raw = (data.candidates?.[0]?.content?.parts?.[0]?.text || '{}').replace(/```json|```/g, '').trim();
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      return res.status(502).json({ error: 'Model did not return valid JSON', raw });
-    }
-    return res.status(200).json(parsed);
+    return res.status(503).json({ error: 'All AI models are currently busy. Please try again in a minute: ' + lastError });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
   }
