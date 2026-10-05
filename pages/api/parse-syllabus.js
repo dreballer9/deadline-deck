@@ -39,7 +39,7 @@ Be thorough:
 
 Also decide the course label: find a short course code (e.g. "MGMT 1301") and/or the full course title (e.g. "Money and Banking") if stated anywhere.
 Here are course labels already on this student's calendar for this semester: ${JSON.stringify(existingCourses || [])}
-If the course you just found is the SAME class as one of those existing labels (just named differently — e.g. a full title now found vs. a short code used before, or vice versa), set "mergeInto" to that exact existing label string; otherwise set it to null.
+If, and ONLY if, you are highly confident the course you just found is literally the SAME class as one of those existing labels — just referred to differently (e.g. the exact full title you now found IS the name of a class previously logged only by its short code, or vice versa, with matching subject matter) — set "mergeInto" to that exact existing label string. Two different course codes (e.g. "MGMT 1301" vs "MGMT 1601") are DIFFERENT courses even if they share a department prefix, sound similar, or have similarly-named assignments — never merge those. When in doubt, set "mergeInto" to null; a missed merge is far less harmful than wrongly combining two different classes.
 
 Return ONLY JSON, no prose, no markdown fences, in this exact shape:
 {"courseCode": "short code or null", "courseName": "full title or null", "mergeInto": "exact existing label or null", "items": [{"title": "short assignment/exam name", "date": "YYYY-MM-DD", "time": "24-hour HH:MM if a specific time is stated, else null", "type": "assignment|test|deliverable"}]}
