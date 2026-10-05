@@ -13,15 +13,12 @@ export default async function handler(req, res) {
 
   // Require a logged-in Supabase user so random visitors can't burn your AI budget.
   const token = (req.headers.authorization || '').replace('Bearer ', '');
-  if (!token) {
-    return res.status(401).json({ error: 'DEBUG: no token was sent from the browser at all' });
-  }
-  if (!supabaseAdmin) {
-    return res.status(401).json({ error: 'DEBUG: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env var is missing on the server' });
+  if (!token || !supabaseAdmin) {
+    return res.status(401).json({ error: 'Not authenticated' });
   }
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
   if (authError || !user) {
-    return res.status(401).json({ error: 'DEBUG: Supabase rejected the token. Reason: ' + (authError ? (authError.message + ' | status: ' + authError.status) : 'no user returned, no error given') });
+    return res.status(401).json({ error: 'Not authenticated' });
   }
 
   if (!process.env.GEMINI_API_KEY) {
@@ -53,7 +50,7 @@ Syllabus text:
 ${text.slice(0, 150000)}`;
 
   try {
-    const model = 'gemini-2.5-flash'; // free-tier eligible as of this writing; see README if that changes
+    const model = 'gemini-3.8-flash'; // free-tier eligible as of this writing; see README if that changes
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
       {
