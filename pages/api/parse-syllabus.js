@@ -87,13 +87,15 @@ ${text.slice(0, 150000)}`;
             return res.status(502).json({ error: 'Model did not return valid JSON', raw });
           }
           // Safety net: never trust the model's merge call across two different
-          // department codes (e.g. "MGMT 1301" vs "ECON 2326"). If both the new
-          // course and the merge target look like "LETTERS NUMBERS" codes with
-          // different letter prefixes, refuse the merge no matter what the model said.
+          // department codes (e.g. "MGMT 1301" vs "ECON 2326"). Only treat a label
+          // as a "code" when it's actually letters immediately followed by a number
+          // (e.g. "ECON 2326") - a plain title like "Money and Banking" is NOT a
+          // code just because it starts with letters, so it must stay free to merge
+          // with a real code for the same course.
           if (parsed && typeof parsed === 'object' && parsed.mergeInto) {
             const deptPrefix = (label) => {
-              const m = String(label || '').trim().match(/^[A-Za-z]{2,}/);
-              return m ? m[0].toUpperCase() : null;
+              const m = String(label || '').trim().match(/^([A-Za-z]{2,10})\s*\d/);
+              return m ? m[1].toUpperCase() : null;
             };
             const newDept = deptPrefix(parsed.courseCode || parsed.courseName);
             const mergeDept = deptPrefix(parsed.mergeInto);
@@ -104,17 +106,19 @@ ${text.slice(0, 150000)}`;
           return res.status(200).json(parsed);
         }
         lastError = data.error?.message || 'Gemini API error';
+        const quotaExceeded = status === 429 || /quota|rate limit/i.test(lastError);
         const overloaded = status === 503 || /overloaded|high demand|unavailable/i.test(lastError);
+        if (quotaExceeded) break; // this model's daily/per-minute quota is gone - retrying it is pointless, go straight to the next model
         if (overloaded && attempt === 0) {
           await sleep(1500); // brief retry on the same model before moving on
           continue;
         }
         if (overloaded) break; // move to the next fallback model
-        // Non-overload error (bad request, auth, etc.) - no point retrying or falling back.
+        // Some other error (bad request, auth, etc.) - no point retrying or falling back.
         return res.status(502).json({ error: lastError });
       }
     }
-    return res.status(503).json({ error: 'All AI models are currently busy. Please try again in a minute: ' + lastError });
+    return res.status(503).json({ error: 'All available AI models are currently busy or out of free quota. Please try again later: ' + lastError });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
   }
