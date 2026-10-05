@@ -13,12 +13,15 @@ export default async function handler(req, res) {
 
   // Require a logged-in Supabase user so random visitors can't burn your AI budget.
   const token = (req.headers.authorization || '').replace('Bearer ', '');
-  if (!token || !supabaseAdmin) {
-    return res.status(401).json({ error: 'Not authenticated' });
+  if (!token) {
+    return res.status(401).json({ error: 'DEBUG: no token was sent from the browser at all' });
+  }
+  if (!supabaseAdmin) {
+    return res.status(401).json({ error: 'DEBUG: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env var is missing on the server' });
   }
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
   if (authError || !user) {
-    return res.status(401).json({ error: 'Not authenticated' });
+    return res.status(401).json({ error: 'DEBUG: Supabase rejected the token. Reason: ' + (authError ? (authError.message + ' | status: ' + authError.status) : 'no user returned, no error given') });
   }
 
   if (!process.env.GEMINI_API_KEY) {
