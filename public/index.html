@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Deadline Deck</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --bg:#f7f8fa; --panel:#fff; --border:#e2e4e9; --text:#1c1e21; --sub:#6b7280;
+  --accent:#3b6ef6; --accent-bg:#eaf0ff; --green:#1a9c5b; --orange:#e0862a; --red:#e0433b;
+  --done:#9aa1ac;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16171b; --panel:#212226; --border:#33353b; --text:#eceef1; --sub:#9aa0ab;
+    --accent:#6f93ff; --accent-bg:#232c48; --done:#5b606b;
+  }
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;}
+button{font:inherit; border:1px solid var(--border); background:var(--panel); color:var(--text); border-radius:8px; padding:8px 12px; cursor:pointer;}
+button:hover{background:var(--accent-bg);}
+.primary{background:var(--accent); color:#fff; border-color:var(--accent);}
+input[type=email]{font:inherit; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); width:100%;}
+
+/* ---- login screen ---- */
+#loginScreen{min-height:100%; display:flex; align-items:center; justify-content:center; padding:20px;}
+.login-card{background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:28px; max-width:360px; width:100%; text-align:center; box-shadow:0 2px 12px rgba(0,0,0,.08);}
+.login-card h1{font-size:20px; margin:0 0 6px;}
+.login-card p{color:var(--sub); font-size:13px; margin:0 0 18px;}
+.login-card input{margin-bottom:10px;}
+.login-card button{width:100%;}
+#loginMsg{font-size:12px; color:var(--sub); margin-top:10px; min-height:16px;}
+
+/* ---- app layout ---- */
+.layout{display:flex; height:100%; gap:16px; padding:16px 0 16px 16px; align-items:flex-start;}
+.side-nav{flex-shrink:0; width:260px; max-height:calc(100% - 32px); background:var(--panel); border:1px solid var(--border); border-radius:14px; box-shadow:0 2px 12px rgba(0,0,0,.08); padding:16px; overflow-y:auto;}
+.side-nav h2{font-size:14px; margin:16px 0 8px;}
+.sem-tabs{display:flex; gap:6px; margin-bottom:4px;}
+.sem-tab{flex:1; padding:8px; border-radius:8px; font-size:13px;}
+.sem-tab.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+.src-item{font-size:12px; color:var(--sub); padding:4px 2px;}
+.app{flex:1; min-width:0; display:flex; flex-direction:column; max-width:1100px;}
+header{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap;}
+header h1{font-size:18px; margin:0; flex:1; min-width:120px;}
+.userchip{font-size:12px; color:var(--sub);}
+.nav{display:flex; gap:4px; align-items:center;}
+main{flex:1; display:flex; gap:16px; padding:16px; overflow:auto;}
+.cal{flex:2; min-width:280px;}
+.grid-head, .grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px;}
+.grid-head div{font-size:12px; color:var(--sub); text-align:center; padding-bottom:4px;}
+.day{background:var(--panel); border:1px solid var(--border); border-radius:8px; min-height:78px; padding:6px; cursor:pointer; display:flex; flex-direction:column; gap:4px; overflow:hidden;}
+.day.other{opacity:.35;}
+.day.today{border-color:var(--accent);}
+.day.selected{outline:2px solid var(--accent);}
+.daynum{font-size:12px; color:var(--sub);}
+.dots{display:flex; flex-wrap:wrap; gap:3px;}
+.dot{width:7px; height:7px; border-radius:50%;}
+.dot.assignment{background:var(--accent);}
+.dot.test{background:var(--red);}
+.dot.deliverable{background:var(--orange);}
+.dot.done{background:var(--done);}
+aside{flex:1; min-width:240px; display:flex; flex-direction:column; gap:16px;}
+.panel{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px;}
+.panel h2{font-size:14px; margin:0 0 8px;}
+.item{display:flex; align-items:flex-start; gap:8px; padding:7px 0; border-bottom:1px solid var(--border); font-size:13px;}
+.item:last-child{border-bottom:none;}
+.item .meta{color:var(--sub); font-size:11px;}
+.item.done .title{text-decoration:line-through; color:var(--done);}
+.tag{font-size:10px; padding:1px 6px; border-radius:20px; color:#fff; white-space:nowrap;}
+.tag.assignment{background:var(--accent);} .tag.test{background:var(--red);} .tag.deliverable{background:var(--orange);}
+input[type=checkbox]{margin-top:2px;}
+#fileInput{display:none;}
+.empty{color:var(--sub); font-size:13px; padding:6px 0;}
+.overlay{position:fixed; inset:0; background:rgba(0,0,0,.4); display:none; align-items:center; justify-content:center; z-index:10;}
+.overlay.show{display:flex;}
+.modal{background:var(--panel); border-radius:10px; padding:18px; max-width:320px; text-align:center;}
+.spinner{width:26px; height:26px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 10px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.filters{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;}
+.chip{font-size:11px; padding:4px 10px; border-radius:20px; border:1px solid var(--border); background:var(--panel); color:var(--sub); cursor:pointer;}
+.chip.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+.subgroup{border-bottom:1px solid var(--border); padding:4px 0;}
+.subgroup:last-child{border-bottom:none;}
+.subtoggle{display:block; width:100%; text-align:left; background:none; border:none; padding:6px 2px; font-size:13px; font-weight:600; cursor:pointer; color:var(--text);}
+.subtoggle:hover{background:var(--accent-bg); border-radius:6px;}
+.sublist{padding-left:6px;}
+.toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--panel); color:var(--text); border:1px solid var(--border); box-shadow:0 4px 16px rgba(0,0,0,.15); border-radius:10px; padding:12px 18px; font-size:13px; max-width:320px; text-align:center; z-index:20; opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="login-card">
+    <h1>📅 Deadline Deck</h1>
+    <p>Sign in with your email to get your own private calendar. We'll send a one-time link — no password needed.</p>
+    <input type="email" id="loginEmail" placeholder="you@school.edu">
+    <button class="primary" id="loginBtn">Send me a sign-in link</button>
+    <div id="loginMsg"></div>
+  </div>
+</div>
+
+<div class="layout" id="mainLayout" style="display:none;">
+<div class="side-nav" id="sideNav">
+  <div class="sem-tabs">
+    <button class="sem-tab active" data-sem="fall">Fall Semester</button>
+    <button class="sem-tab" data-sem="winter">Winter Semester</button>
+  </div>
+  <h2>Courses</h2>
+  <div id="courseList"></div>
+  <button id="clearAllBtn" style="width:100%;margin-top:20px;color:var(--red);border-color:var(--red);">Clear All Data</button>
+  <button id="signOutBtn" style="width:100%;margin-top:8px;">Sign Out</button>
+</div>
+<div class="app">
+  <header>
+    <h1>📅 Deadline Deck</h1>
+    <span class="userchip" id="userChip"></span>
+    <div class="nav">
+      <button id="prev">‹</button>
+      <span id="monthLabel" style="min-width:130px;text-align:center;font-size:14px;"></span>
+      <button id="next">›</button>
+    </div>
+    <button class="primary" id="uploadBtn">Upload Syllabus</button>
+    <input type="file" id="fileInput" accept="application/pdf">
+  </header>
+  <main>
+    <section class="cal">
+      <div class="grid-head"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>
+      <div class="grid" id="grid"></div>
+      <div class="panel" id="dayPanel" style="margin-top:16px;"><h2>Select a day</h2><div class="empty">Click a date to see items.</div></div>
+    </section>
+    <aside>
+      <div class="panel" id="upcomingPanel"><h2>Upcoming (next 10)</h2><div id="courseFilters" class="filters"></div><div id="upcomingList"></div></div>
+      <div class="panel" id="completedPanel">
+        <h2>Completed</h2>
+        <button id="toggleCompleted">View</button>
+        <div id="completedList" style="display:none; margin-top:10px;"></div>
+      </div>
+    </aside>
+  </main>
+</div>
+</div>
+
+<div class="overlay" id="overlay"><div class="modal"><div class="spinner"></div><div id="overlayText">Reading syllabus…</div></div></div>
+<div class="overlay" id="confirmOverlay">
+  <div class="modal">
+    <div id="confirmText" style="margin-bottom:14px;"></div>
+    <div style="display:flex; gap:8px; justify-content:center;">
+      <button id="confirmCancel">Cancel</button>
+      <button id="confirmOk" class="primary">Confirm</button>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+const supabase = window.supabase.createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON_KEY);
+
+let currentUser=null, session=null;
+let items=[]; // {id,title,date,time,type,course,completed,semester}
+let courseSources=[]; // {id,course,filename,semester}
+let openSidebarCourses=new Set();
+let activeSemester='fall';
+let activeFilters=new Set();
+let cur=new Date(); cur.setDate(1);
+let selected=null;
+
+/* ---------- auth ---------- */
+document.getElementById('loginBtn').onclick=async()=>{
+  const email=document.getElementById('loginEmail').value.trim();
+  const msg=document.getElementById('loginMsg');
+  if(!email){ msg.textContent='Enter your email first.'; return; }
+  msg.textContent='Sending…';
+  const { error } = await supabase.auth.signInWithOtp({ email, options:{ emailRedirectTo: window.location.origin } });
+  msg.textContent = error ? ('Error: '+error.message) : 'Check your email for a sign-in link.';
+};
+
+supabase.auth.onAuthStateChange((event, s)=>{
+  session=s;
+  currentUser = s ? s.user : null;
+  if(currentUser){
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('mainLayout').style.display='flex';
+    document.getElementById('userChip').textContent=currentUser.email||'';
+    boot();
+  } else {
+    document.getElementById('loginScreen').style.display='flex';
+    document.getElementById('mainLayout').style.display='none';
+  }
+});
+
+document.getElementById('signOutBtn').onclick=async()=>{ await supabase.auth.signOut(); };
+
+async function boot(){
+  await loadItems();
+  await loadSources();
+  render();
+}
+
+/* ---------- data access ---------- */
+async function loadItems(){
+  items=[];
+  const { data, error } = await supabase.from('assignments').select('*');
+  if(error){ console.error(error); showToast('Could not load your assignments.'); return; }
+  items = data || [];
+}
+async function loadSources(){
+  courseSources=[];
+  const { data, error } = await supabase.from('course_sources').select('*');
+  if(error){ console.error(error); return; }
+  courseSources = data || [];
+}
+async function insertItem(it){
+  const { data, error } = await supabase.from('assignments').insert([{
+    user_id: currentUser.id, course: it.course, title: it.title, date: it.date,
+    time: it.time, type: it.type, completed: false, semester: it.semester
+  }]).select();
+  if(error){ console.error(error); showToast('Could not save that item.'); return null; }
+  return data[0];
+}
+async function updateItem(id, patch){
+  const it = items.find(x=>x.id===id);
+  if(!it) return;
+  Object.assign(it, patch);
+  const { error } = await supabase.from('assignments').update(patch).eq('id', id);
+  if(error){ console.error(error); showToast('Could not save that change.'); }
+  render();
+}
+async function renameCourse(oldLabel, newLabel){
+  await supabase.from('assignments').update({course:newLabel}).eq('course', oldLabel).eq('user_id', currentUser.id);
+  await supabase.from('course_sources').update({course:newLabel}).eq('course', oldLabel).eq('user_id', currentUser.id);
+  items.forEach(i=>{ if(i.course===oldLabel) i.course=newLabel; });
+  courseSources.forEach(s=>{ if(s.course===oldLabel) s.course=newLabel; });
+}
+async function addSource(course, filename, semester){
+  const { data, error } = await supabase.from('course_sources').insert([{
+    user_id: currentUser.id, course, filename, semester
+  }]).select();
+  if(!error && data) courseSources.push(data[0]);
+}
+
+/* ---------- semester / sidebar ---------- */
+document.querySelectorAll('.sem-tab').forEach(btn=>{
+  btn.onclick=()=>{
+    activeSemester=btn.dataset.sem;
+    document.querySelectorAll('.sem-tab').forEach(b=>b.classList.toggle('active', b===btn));
+    selected=null; activeFilters.clear();
+    render();
+  };
+});
+function visibleItems(){ return items.filter(i=>(i.semester||'fall')===activeSemester); }
+function visibleSources(course){ return courseSources.filter(s=>s.course===course && (s.semester||'fall')===activeSemester).map(s=>s.filename); }
+
+document.getElementById('clearAllBtn').onclick=async()=>{
+  if(!(await showConfirm('This will permanently delete every uploaded syllabus and assignment from both semesters. This cannot be undone. Continue?'))) return;
+  showOverlay('Clearing data…');
+  try{
+    await supabase.from('assignments').delete().eq('user_id', currentUser.id);
+    await supabase.from('course_sources').delete().eq('user_id', currentUser.id);
+  } finally {
+    items=[]; courseSources=[]; selected=null; activeFilters.clear(); openSidebarCourses.clear();
+    hideOverlay();
+    render();
+  }
+};
+
+/* ---------- rendering ---------- */
+function fmtDate(d){return d.toISOString().slice(0,10);}
+function typeTag(t){return t==='test'?'test':(t==='deliverable'?'deliverable':'assignment');}
+function formatTime(t){
+  const [h,m]=t.split(':').map(Number);
+  const ampm = h>=12?'PM':'AM';
+  const h12 = ((h%12)||12);
+  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+function niceDate(it){
+  const d = new Date(it.date+'T00:00:00').toLocaleDateString('default',{month:'long', day:'numeric'});
+  if(!it.time) return d;
+  return `${d}, ${formatTime(it.time)}`;
+}
+function escapeHtml(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function itemHTML(it, showDate){
+  const meta = showDate ? niceDate(it) : (it.time ? formatTime(it.time) : '');
+  return `<div class="item ${it.completed?'done':''}">
+    <input type="checkbox" data-id="${it.id}" ${it.completed?'checked':''}>
+    <div>
+      <div class="title">${it.course?escapeHtml(it.course)+' - ':''}${escapeHtml(it.title)} <span class="tag ${typeTag(it.type)}">${it.type}</span></div>
+      <div class="meta">${meta}</div>
+    </div>
+  </div>`;
+}
+
+function render(){
+  renderGrid();
+  renderUpcoming();
+  renderDay();
+  renderCourseList();
+  if(document.getElementById('completedList').style.display!=='none') renderCompleted();
+}
+
+function renderCourseList(){
+  const container=document.getElementById('courseList');
+  const courses=[...new Set(visibleItems().map(i=>i.course).filter(Boolean))].sort();
+  if(!courses.length){
+    container.innerHTML='<div class="empty">No courses yet for this semester.</div><button class="primary" id="sidebarUploadBtn" style="margin-top:8px;width:100%;">Upload Syllabus</button>';
+    document.getElementById('sidebarUploadBtn').onclick=()=>document.getElementById('fileInput').click();
+    return;
+  }
+  container.innerHTML = courses.map(c=>{
+    const open=openSidebarCourses.has(c);
+    const sources=visibleSources(c);
+    return `<div class="subgroup">
+      <button class="subtoggle" data-course="${escapeHtml(c)}">${open?'▾':'▸'} ${escapeHtml(c)}</button>
+      <div class="sublist" style="display:${open?'block':'none'}">${sources.length?sources.map(s=>`<div class="src-item">📄 ${escapeHtml(s)}</div>`).join(''):'<div class="empty">No source recorded.</div>'}</div>
+    </div>`;
+  }).join('');
+  container.querySelectorAll('.subtoggle').forEach(btn=>{
+    btn.onclick=()=>{
+      const c=btn.dataset.course;
+      if(openSidebarCourses.has(c)) openSidebarCourses.delete(c); else openSidebarCourses.add(c);
+      renderCourseList();
+    };
+  });
+}
+
+function renderGrid(){
+  const grid=document.getElementById('grid');
+  grid.innerHTML='';
+  const y=cur.getFullYear(), m=cur.getMonth();
+  document.getElementById('monthLabel').textContent = cur.toLocaleString('default',{month:'long', year:'numeric'});
+  const first=new Date(y,m,1);
+  const startOffset=first.getDay();
+  const start=new Date(y,m,1-startOffset);
+  const today=fmtDate(new Date());
+  for(let i=0;i<42;i++){
+    const d=new Date(start); d.setDate(start.getDate()+i);
+    const ds=fmtDate(d);
+    const cell=document.createElement('div');
+    cell.className='day'+(d.getMonth()!==m?' other':'')+(ds===today?' today':'')+(ds===selected?' selected':'');
+    const dayItems=visibleItems().filter(x=>x.date===ds);
+    cell.innerHTML=`<div class="daynum">${d.getDate()}</div><div class="dots">${dayItems.map(it=>`<div class="dot ${it.completed?'done':typeTag(it.type)}"></div>`).join('')}</div>`;
+    cell.onclick=()=>{selected=ds; render();};
+    grid.appendChild(cell);
+  }
+}
+
+function renderDay(){
+  const panel=document.getElementById('dayPanel');
+  if(!selected){ panel.innerHTML='<h2>Select a day</h2><div class="empty">Click a date to see items.</div>'; return; }
+  const dayItems=visibleItems().filter(x=>x.date===selected).sort((a,b)=>a.title.localeCompare(b.title));
+  const label=new Date(selected+'T00:00:00').toLocaleDateString('default',{weekday:'long', month:'short', day:'numeric'});
+  panel.innerHTML=`<h2>${label}</h2>`+(dayItems.length?dayItems.map(it=>itemHTML(it)).join(''):'<div class="empty">Nothing due.</div>');
+  panel.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.onchange=()=>updateItem(cb.dataset.id,{completed:cb.checked});
+  });
+}
+
+function renderUpcoming(){
+  const courses=[...new Set(visibleItems().map(i=>i.course).filter(Boolean))].sort();
+  const filterEl=document.getElementById('courseFilters');
+  filterEl.innerHTML = courses.map(c=>`<button class="chip ${activeFilters.has(c)?'active':''}" data-course="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join('');
+  filterEl.querySelectorAll('.chip').forEach(chip=>{
+    chip.onclick=()=>{
+      const c=chip.dataset.course;
+      if(activeFilters.has(c)) activeFilters.delete(c); else activeFilters.add(c);
+      renderUpcoming();
+    };
+  });
+  const list=document.getElementById('upcomingList');
+  const today=fmtDate(new Date());
+  const up=visibleItems().filter(x=>!x.completed && x.date>=today && (activeFilters.size===0 || activeFilters.has(x.course))).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,10);
+  list.innerHTML = up.length? up.map(it=>itemHTML(it,true)).join('') : '<div class="empty">All caught up.</div>';
+  list.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.onchange=()=>updateItem(cb.dataset.id,{completed:cb.checked});
+  });
+}
+
+function renderCompleted(){
+  const list=document.getElementById('completedList');
+  const done=visibleItems().filter(x=>x.completed);
+  if(!done.length){ list.innerHTML='<div class="empty">Nothing completed yet.</div>'; return; }
+  const byCourse={};
+  done.forEach(it=>{ const c=it.course||'Other'; (byCourse[c]=byCourse[c]||[]).push(it); });
+  const courses=Object.keys(byCourse).sort();
+  list.innerHTML = courses.map(c=>{
+    const arr=byCourse[c].sort((a,b)=>b.date.localeCompare(a.date));
+    const open=openSidebarCourses.has('completed:'+c);
+    return `<div class="subgroup">
+      <button class="subtoggle" data-course="${escapeHtml(c)}">${open?'▾':'▸'} ${escapeHtml(c)} (${arr.length})</button>
+      <div class="sublist" style="display:${open?'block':'none'}">${arr.map(it=>itemHTML(it,true)).join('')}</div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.subtoggle').forEach(btn=>{
+    btn.onclick=()=>{
+      const key='completed:'+btn.dataset.course;
+      if(openSidebarCourses.has(key)) openSidebarCourses.delete(key); else openSidebarCourses.add(key);
+      renderCompleted();
+    };
+  });
+  list.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.onchange=()=>updateItem(cb.dataset.id,{completed:cb.checked});
+  });
+}
+
+document.getElementById('prev').onclick=()=>{cur.setMonth(cur.getMonth()-1); render();};
+document.getElementById('next').onclick=()=>{cur.setMonth(cur.getMonth()+1); render();};
+document.getElementById('uploadBtn').onclick=()=>document.getElementById('fileInput').click();
+document.getElementById('toggleCompleted').onclick=()=>{
+  const list=document.getElementById('completedList');
+  const btn=document.getElementById('toggleCompleted');
+  const show = list.style.display==='none';
+  list.style.display = show?'block':'none';
+  btn.textContent = show?'Hide':'View';
+  if(show) renderCompleted();
+};
+document.getElementById('fileInput').onchange=async(e)=>{
+  const file=e.target.files[0];
+  if(!file) return;
+  await handleSyllabus(file);
+  e.target.value='';
+};
+
+/* ---------- overlay / confirm / toast ---------- */
+function showOverlay(text){document.getElementById('overlayText').textContent=text; document.getElementById('overlay').classList.add('show');}
+function hideOverlay(){document.getElementById('overlay').classList.remove('show');}
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t=setTimeout(()=>t.classList.remove('show'), 4000);
+}
+function showConfirm(message){
+  return new Promise(resolve=>{
+    document.getElementById('confirmText').textContent=message;
+    const overlay=document.getElementById('confirmOverlay');
+    overlay.classList.add('show');
+    const okBtn=document.getElementById('confirmOk');
+    const cancelBtn=document.getElementById('confirmCancel');
+    const cleanup=(result)=>{ overlay.classList.remove('show'); okBtn.onclick=null; cancelBtn.onclick=null; resolve(result); };
+    okBtn.onclick=()=>cleanup(true);
+    cancelBtn.onclick=()=>cleanup(false);
+  });
+}
+
+/* ---------- syllabus upload ---------- */
+async function extractPdfText(file){
+  const buf=await file.arrayBuffer();
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const doc=await pdfjsLib.getDocument({data:buf}).promise;
+  let text='';
+  for(let p=1;p<=doc.numPages;p++){
+    const page=await doc.getPage(p);
+    const content=await page.getTextContent();
+    let lastY=null;
+    content.items.forEach(it=>{
+      if(lastY!==null && it.transform && Math.abs(it.transform[5]-lastY)>2){ text+='\n'; }
+      text += it.str + (it.hasEOL ? '\n' : ' ');
+      if(it.transform) lastY=it.transform[5];
+    });
+    text += '\n\n';
+    if(text.length>200000) break;
+  }
+  return text;
+}
+
+async function handleSyllabus(file){
+  showOverlay('Reading PDF…');
+  try{
+    const text=await extractPdfText(file);
+    showOverlay('Finding dates…');
+    const fallbackCourse = file.name.replace(/\.pdf$/i,'');
+    const existingCourses=[...new Set(visibleItems().map(i=>i.course).filter(Boolean))];
+
+    const resp = await fetch('/api/parse-syllabus', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'Authorization':'Bearer '+(session?.access_token||'')},
+      body: JSON.stringify({ text, existingCourses, year: new Date().getFullYear() })
+    });
+    const result = await resp.json();
+    if(!resp.ok){ hideOverlay(); showToast(result.error || 'Could not reach the parsing service.'); return; }
+
+    const extractedCode = result.courseCode ? String(result.courseCode).trim() : null;
+    const extractedName = result.courseName ? String(result.courseName).trim() : null;
+    let courseName = extractedCode || extractedName || fallbackCourse;
+
+    if(result.mergeInto && existingCourses.includes(result.mergeInto) && result.mergeInto !== courseName){
+      await renameCourse(result.mergeInto, courseName);
+    }
+
+    await addSource(courseName, file.name, activeSemester);
+
+    const arr = Array.isArray(result.items) ? result.items : [];
+    if(!arr.length){ hideOverlay(); showToast('No dated items were found in that PDF.'); return; }
+    for(const raw of arr){
+      if(!raw.date || !/^\d{4}-\d{2}-\d{2}$/.test(raw.date)) continue;
+      const draft = {
+        title: raw.title||'Untitled', date: raw.date,
+        time: (raw.time && /^\d{2}:\d{2}$/.test(raw.time)) ? raw.time : null,
+        type: ['assignment','test','deliverable'].includes(raw.type) ? raw.type : 'assignment',
+        course: courseName, semester: activeSemester
+      };
+      const saved = await insertItem(draft);
+      if(saved) items.push(saved);
+    }
+    hideOverlay();
+    render();
+  }catch(err){
+    console.error(err);
+    hideOverlay();
+    showToast('Could not parse that syllabus. Try a text-based PDF (not a scanned image).');
+  }
+}
+</script>
+</body>
+</html>
